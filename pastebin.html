@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>pastebin</title>
+</head>
+<body>
+
+<textarea id="pasteInput" rows="10" cols="60"></textarea>
+<br>
+<button id="pasteBtn">paste</button>
+<br>
+<select id="historyList" disabled></select>
+
+<script>
+// Change this to wherever nginx is actually serving the pastebin backend.
+// Same-origin (page served by the same nginx) avoids CORS entirely.
+const BACKEND_URL = 'http://127.0.0.1:8000/';
+
+const STORAGE_KEY = 'pastebin_history';
+
+function loadHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveHistory(history) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+}
+
+function renderHistory() {
+  const select = document.getElementById('historyList');
+  select.innerHTML = '';
+  const history = loadHistory();
+  for (let i = history.length - 1; i >= 0; i--) {
+    const entry = history[i];
+    const option = document.createElement('option');
+    option.value = entry.url;
+    option.textContent = entry.createdAt + ' - ' + entry.url;
+    select.appendChild(option);
+  }
+}
+
+document.getElementById('pasteBtn').addEventListener('click', async function () {
+  const textarea = document.getElementById('pasteInput');
+  const content = textarea.value;
+  if (!content) {
+    return;
+  }
+
+  let response;
+  try {
+    response = await fetch(BACKEND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: content
+    });
+  } catch (err) {
+    alert('Request failed: ' + err.message);
+    return;
+  }
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    alert('Error ' + response.status + ': ' + text);
+    return;
+  }
+
+  const url = text.trim();
+  const history = loadHistory();
+  history.push({ url: url, createdAt: new Date().toISOString() });
+  saveHistory(history);
+  renderHistory();
+  textarea.value = '';
+});
+
+renderHistory();
+</script>
+
+</body>
+</html>
