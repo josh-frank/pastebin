@@ -1,0 +1,10 @@
+[Unit]
+Description=Delete expired pastebin entries
+
+[Service]
+Type=oneshot
+User=pastebin
+Group=pastebin
+WorkingDirectory=/opt/pastebin
+Environment=PASTEBIN_DB=/opt/pastebin/pastebin.db
+ExecStart=/opt/pastebin/venv/bin/python3 cleanup.py

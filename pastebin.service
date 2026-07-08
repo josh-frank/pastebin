@@ -1,0 +1,15 @@
+[Unit]
+Description=Pastebin (gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=pastebin
+Group=pastebin
+WorkingDirectory=/opt/pastebin
+Environment=PASTEBIN_DB=/opt/pastebin/pastebin.db
+ExecStart=/opt/pastebin/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 wsgi:app
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
