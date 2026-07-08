@@ -95,7 +95,10 @@ def get_paste(paste_id):
             db.execute("DELETE FROM pastes WHERE id = ?", (paste_id,))
             abort(404, description="Paste not found")
 
-    return Response(content, mimetype="text/plain")
+    return Response(content, mimetype="text/plain", headers={
+        'Content-Type': 'text/plain; charset=utf-8',
+        'X-Content-Type-Options': 'nosniff'
+    })
 
 
 @app.errorhandler(400)
