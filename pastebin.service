@@ -8,6 +8,9 @@ User=pastebin
 Group=pastebin
 WorkingDirectory=/opt/pastebin
 Environment=PASTEBIN_DB=/opt/pastebin/pastebin.db
+# The static frontend's origin (see nginx.conf's second server block).
+# Used both to build share links and as the CORS allow-origin for GET /<id>.
+Environment=PASTEBIN_FRONTEND_ORIGIN=https://paste.example.com
 ExecStart=/opt/pastebin/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 wsgi:app
 Restart=on-failure
 

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>pastebin - view</title>
+</head>
+<body>
+
+<p id="status">loading&hellip;</p>
+<pre id="pasteOutput" style="display:none; white-space:pre-wrap; word-wrap:break-word;"></pre>
+
+<script>
+// Must match the BACKEND_URL in pastebin.html.
+const BACKEND_URL = 'http://127.0.0.1:8000/';
+
+function b64urlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  const bin = atob(str);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function decryptPaste(id, keyStr) {
+  const response = await fetch(BACKEND_URL + id);
+  if (response.status === 404) {
+    throw new Error('not-found');
+  }
+  if (!response.ok) {
+    throw new Error('server error (' + response.status + ')');
+  }
+
+  const blob = new Uint8Array(await response.arrayBuffer());
+  const iv = blob.slice(0, 12);
+  const ciphertext = blob.slice(12);
+
+  const rawKey = b64urlDecode(keyStr);
+  const key = await crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['decrypt']);
+
+  // AES-GCM decrypt throws on a wrong key or any tampering with the
+  // ciphertext (auth tag mismatch) -- that doubles as our integrity check.
+  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+  return new TextDecoder().decode(plainBuf);
+}
+
+(async function () {
+  const statusEl = document.getElementById('status');
+  const outputEl = document.getElementById('pasteOutput');
+
+  // Pretty URL is "/<id>#<key>" -- see nginx.conf's try_files fallback,
+  // which routes any unmatched path on this origin to this same page.
+  const id = location.pathname.replace(/^\//, '');
+  const keyStr = location.hash.slice(1);
+
+  if (!id) {
+    statusEl.textContent = 'No paste id in the URL.';
+    return;
+  }
+  if (!keyStr) {
+    statusEl.textContent = 'No decryption key in the link -- the key lives only in the URL fragment (after #). Check the full link was copied.';
+    return;
+  }
+
+  try {
+    const text = await decryptPaste(id, keyStr);
+    statusEl.style.display = 'none';
+    outputEl.textContent = text;
+    outputEl.style.display = 'block';
+  } catch (err) {
+    if (err.message === 'not-found') {
+      statusEl.textContent = "This paste doesn't exist, has already expired (90 days), or was never created.";
+    } else if (err.name === 'OperationError') {
+      statusEl.textContent = "Decryption failed -- the key in the link doesn't match this paste. It may be corrupted or incomplete.";
+    } else {
+      statusEl.textContent = 'Something went wrong: ' + err.message;
+    }
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -13,10 +13,44 @@
 
 <script>
 // Change this to wherever nginx is actually serving the pastebin backend.
-// Same-origin (page served by the same nginx) avoids CORS entirely.
+// This is now a cross-origin request (see nginx.conf's two server blocks +
+// the CORS header app.py adds on GET), since encryption/decryption needs to
+// happen here on the frontend origin, not the API origin.
 const BACKEND_URL = 'http://127.0.0.1:8000/';
 
 const STORAGE_KEY = 'pastebin_history';
+
+// ---- crypto helpers -------------------------------------------------------
+// AES-256-GCM, generated fresh per paste. The key never leaves this tab
+// except as part of the URL fragment (after #), which browsers never send
+// to any server -- see view.html for the decrypt side.
+
+function b64urlEncode(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function encryptPaste(plaintext) {
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    new TextEncoder().encode(plaintext)
+  );
+
+  // wire format the server stores: iv (12 bytes) || ciphertext+tag
+  const payload = new Uint8Array(iv.length + ciphertext.byteLength);
+  payload.set(iv, 0);
+  payload.set(new Uint8Array(ciphertext), iv.length);
+
+  const rawKey = await crypto.subtle.exportKey('raw', key);
+  return { payload, keyStr: b64urlEncode(rawKey) };
+}
+
+// ---- history (unchanged) --------------------------------------------------
 
 function loadHistory() {
   try {
@@ -50,12 +84,13 @@ document.getElementById('pasteBtn').addEventListener('click', async function () 
     return;
   }
 
+  const { payload, keyStr } = await encryptPaste(content);
+
   let response;
   try {
     response = await fetch(BACKEND_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      body: content
+      body: payload
     });
   } catch (err) {
     alert('Request failed: ' + err.message);
@@ -69,7 +104,9 @@ document.getElementById('pasteBtn').addEventListener('click', async function () 
     return;
   }
 
-  const url = text.trim();
+  // Server returns "<origin>/<id>"; the key is appended here, client-side
+  // only, and is never sent in any request.
+  const url = text.trim() + '#' + keyStr;
   const history = loadHistory();
   history.push({ url: url, createdAt: new Date().toISOString() });
   saveHistory(history);
